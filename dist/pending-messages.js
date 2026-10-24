@@ -28,7 +28,7 @@
     for(const g of groups){
       const account=accounts.find(a=>String(a.id)===String(g.account_id));
       if(account&&!account.authorized)add({account_id:g.account_id,title:'Original account disconnected',message:'Connect the original Telegram account in Settings. Pending messages will not switch to another sender.'});
-      for(const row of g.rows)if(row.error||['Needs attention','Missed','Failed','Uncertain'].includes(row.status))add({account_id:g.account_id,recipient:row.name||row.target,title:row.status,message:row.error||'Delivery needs review. Check Telegram and the sending queue before trying again.'});
+      for(const row of g.rows)if((row.error&&!['Cancelled','Sent'].includes(row.status))||['Needs attention','Missed','Failed','Uncertain'].includes(row.status))add({account_id:g.account_id,recipient:row.name||row.target,title:row.status,message:row.error||'Delivery needs review. Check Telegram and the sending queue before trying again.'});
     }
     for(const a of accounts){
       if(a.error||a.health?.last_error)add({account_id:a.id,title:'Account error',message:a.error||a.health.last_error});

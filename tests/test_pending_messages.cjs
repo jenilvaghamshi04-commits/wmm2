@@ -11,3 +11,5 @@ assert.equal(model.build(rows.map(r=>({...r,status:'Sent'}))).length,0,'complete
 assert.equal(model.countdown({status:'Queued',due_at:null},now),'Waiting for queue');assert.equal(model.countdown({status:'Waiting for sign-in'},now),'Sign-in required');
 const routes=require('../dist/page-routes.js');assert.equal(routes.resolve('/pending-messages'),'pending');
 console.log('Ten-recipient timing, progress, truthful countdowns, issue reporting and schedule deduplication passed.');
+
+assert.equal(model.issues([{rows:[{status:'Cancelled',error:'Cancelled by you.'}],account_id:1}],[{id:1,authorized:true}]).length,0,'intentional cancellations are not errors');

@@ -1,0 +1,10 @@
+.env
+data/
+*.db
+*.db-*
+*.session
+*.session-*
+__pycache__/
+*.pyc
+.venv/
+.openai/

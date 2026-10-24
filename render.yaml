@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: wmm-tg-admins
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: python -m uvicorn backend.app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: DASHBOARD_KEY
+        generateValue: true
+      - key: DASHBOARD_USERNAME
+        value: admin
+      - key: DATA_DIR
+        value: /tmp/wmm-tg-admins-data

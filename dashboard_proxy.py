@@ -98,6 +98,7 @@ async def cancel_scheduled_message(request: Request, body: dict):
     return await request.app.state.scheduler.cancel(body.get('schedule_id', ''), request.headers.get('authorization', ''))
 
 @app.get('/tg-groups')
+@app.get('/pending-messages')
 @app.get('/sent-messages')
 @app.get('/replies')
 @app.get('/message-templates')

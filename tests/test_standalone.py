@@ -11,7 +11,7 @@ class StandaloneTests(unittest.TestCase):
     def test_conversation_pages_and_same_origin_login(self):
         page=self.client.get('/');self.assertEqual(page.status_code,200)
         import re
-        self.assertEqual(re.findall(r'data-view="([^"]+)"',page.text),['groups','sent','replies','templates','connections'])
+        self.assertEqual(re.findall(r'data-view="([^"]+)"',page.text),['groups','pending','sent','replies','templates','connections'])
         self.assertNotIn('id="loginGateway"',page.text);self.assertNotIn('qa-only',page.text);self.assertNotIn('id="saved"',page.text)
     def test_auth_templates_and_pacing_persist(self):
         self.assertEqual(self.client.get('/status').status_code,401)

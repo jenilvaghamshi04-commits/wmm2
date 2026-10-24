@@ -26,7 +26,7 @@ class DashboardProxyTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_separate_page_urls_serve_the_workspace_without_reading_backend(self):
-        for path in ['/sent-messages', '/replies', '/tg-groups', '/message-templates', '/settings']:
+        for path in ['/pending-messages', '/sent-messages', '/replies', '/tg-groups', '/message-templates', '/settings']:
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200)
             self.assertIn('/page-routes.js', response.text)

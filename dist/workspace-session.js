@@ -1,7 +1,7 @@
 /* Persistent expiring dashboard sessions. Telegram credentials and workspace records stay on the server. */
 (function(root){
   const name='wmm.tg-admins.standalone.session.v1';
-  const pages=new Set(['directory','groups','saved','sent','replies','pipeline','templates','connections']);
+  const pages=new Set(['directory','groups','pending','saved','sent','replies','pipeline','templates','connections']);
   const filterIds=['savedType','role','sentScope','sentStatus','replyMessageOrder','replyAccount','leadFilter','leadType'];
   function create(storage,legacy){
     function clear(){for(const target of [storage,legacy])try{target?.removeItem(name)}catch{}}

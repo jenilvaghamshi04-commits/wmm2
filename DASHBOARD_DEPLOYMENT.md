@@ -64,3 +64,14 @@ original backend's auto-deploy branch until that preservation step is complete.
 - The dashboard must remain running. A schedule missed by more than 15 minutes waits for review rather than sending unexpectedly late.
 - New schedule metadata uses temporary dashboard storage; free-host restarts or redeployments can clear it. No original backend records or Telegram sessions are moved.
 - Session tokens used for a reviewed schedule stay only in process memory, never in the schedule database. Authentication expiry/restarts require signing in again; no authentication lifetime is extended by the scheduler.
+
+## Pending Messages and black/lime branding
+
+The `/pending-messages` page reads the original queue and dashboard schedules.
+After a reviewed admin batch is queued, navigation opens this page. Each batch
+shows its recipients, planned earliest IST send times, countdowns, status and
+individual cancellation. Account pauses, disconnected senders, delivery errors
+and recent failed UI requests appear in Queue issues. Timings are estimates,
+not confirmation of sending; Sent is shown only after backend confirmation.
+The UI now uses black surfaces and lime accents throughout. No original backend
+files, Telegram account sessions, original queue entries or credentials change.

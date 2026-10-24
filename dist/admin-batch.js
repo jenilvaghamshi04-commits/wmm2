@@ -87,7 +87,7 @@ function initializeAdminBatch(){
  document.getElementById('tgBatchConfirm').onclick=()=>action(document.getElementById('tgBatchConfirm'),async()=>{
   const {id}=tgBatchReady();if(!tgAdminBatchPlan||tgAdminBatchPlan.body.account_id!==id)throw Error('Review the messages first.');
   document.getElementById('tgBatchState').textContent='Saving your reviewed batch…';
-  try{const result=await rawApi('/groups/admins/send-batch',tgAdminBatchPlan.body);tgAdminSelected.clear();tgAdminBatchPlan=null;closeTgAdminComposer();try{await refresh(false)}catch{}renderGroupAdmins();toast(result.count+' messages queued · Account '+result.account_id+' · at least '+result.delay_seconds/60+' minutes apart. You can close this tab.');}
+  try{const result=await rawApi('/groups/admins/send-batch',tgAdminBatchPlan.body);tgAdminSelected.clear();tgAdminBatchPlan=null;closeTgAdminComposer();try{await refresh(false)}catch{}renderGroupAdmins();view('pending');toast(result.count+' messages queued · Account '+result.account_id+' · at least '+result.delay_seconds/60+' minutes apart. You can close this tab.');}
   catch(error){if(isTemplateConflict(error)){await refreshTemplateCatalog();renderTgSavedOptions(true);invalidateTgBatchPreview();buildTgAdminBatchPreview();document.getElementById('tgBatchState').textContent='Saved options updated. Review the new previews, then queue again.';toast('Saved options updated. Review the new previews, then queue again.');return}document.getElementById('tgBatchState').textContent=error.name==='AbortError'?'Connection timed out. Check the queue in Settings before changing this preview. Retrying this unchanged batch uses the same request ID.':error.message;try{await refresh(false)}catch{}throw error}
  });
 }

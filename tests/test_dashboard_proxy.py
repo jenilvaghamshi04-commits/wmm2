@@ -66,3 +66,11 @@ class DashboardProxyTests(unittest.TestCase):
         self.assertEqual(self.client.post('/status', json={}).status_code, 405)
         self.assertEqual(self.client.post('/send-queue', content=b'x' * (256 * 1024 + 1)).status_code, 413)
         self.backend.request.assert_not_awaited()
+
+    def test_backend_wakeup_html_is_a_retryable_json_error_without_resending(self):
+        self.backend.request.return_value = httpx.Response(200, text='<html>Service waking up</html>', headers={'Content-Type': 'text/html'})
+        response = self.client.post('/send-queue', json={'request_id': 'keep-this-request'})
+        self.assertEqual(response.status_code, 503)
+        self.assertIn('waking up', response.json()['detail'])
+        self.assertEqual(response.headers['cache-control'], 'no-store')
+        self.backend.request.assert_awaited_once()

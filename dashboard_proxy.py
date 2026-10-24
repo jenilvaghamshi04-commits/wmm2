@@ -60,6 +60,10 @@ async def forward_api(request: Request, call_next):
         return JSONResponse({'detail': 'Your existing WMM server is waking up or temporarily unavailable. Retry the same request; do not create another message.'}, status_code=502, headers={'Cache-Control': 'no-store'})
     if 300 <= result.status_code < 400:
         return JSONResponse({'detail': 'The existing backend returned an unexpected redirect.'}, status_code=502)
+    if 'application/json' not in result.headers.get('content-type', '').lower():
+        # Render can return an HTML wake-up page before a free backend is ready.
+        # Preserve the browser's session and request ID instead of a JSON parse error.
+        return JSONResponse({'detail': 'Your existing WMM server is waking up or temporarily unavailable. Retry the same request once it is ready.'}, status_code=503, headers={'Cache-Control': 'no-store'})
     return Response(result.content, status_code=result.status_code, headers={
         'Content-Type': result.headers.get('content-type', 'application/json'),
         'Cache-Control': 'no-store',

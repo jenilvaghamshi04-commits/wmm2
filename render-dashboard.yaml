@@ -1,0 +1,14 @@
+# Deploy as a NEW dashboard service; keep the current wmm2 backend running.
+services:
+  - type: web
+    name: wmm2-dashboard
+    runtime: python
+    plan: free
+    buildCommand: pip install -r dashboard-requirements.txt
+    startCommand: python -m uvicorn dashboard_proxy:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /dashboard-health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: WMM_BACKEND_ORIGIN
+        value: https://wmm2.onrender.com

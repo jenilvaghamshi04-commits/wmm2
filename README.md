@@ -1,12 +1,16 @@
+> **Data-preserving dashboard deployment:** To use the new Sent Messages and Replies pages without redeploying your existing backend, deploy `dashboard_proxy.py` as a **separate** service using `dashboard-requirements.txt` and `render-dashboard.yaml`. See [DASHBOARD_DEPLOYMENT.md](DASHBOARD_DEPLOYMENT.md). Keep the current `wmm2` service running with its existing accounts and data.
+
 # WMM Team — standalone TG Groups admins
 
-An independent project with exactly three workspace pages:
+An independent project with five workspace pages:
 
 1. **TG Groups admins** — new-group monitoring, visible admin roles/titles, group dropdowns, account progress, editable delay, admin checkboxes, token/exchange fields, saved-template selection, individual message previews and reviewed batch sending.
 2. **Message templates** — four message types, five editable options for each, nonrepeating shuffled cycles, token/exchange previews and automation preferences.
-3. **Settings** — add accounts (one initially, up to three), enter Telegram API credentials, phone/QR login, code recovery, two-step verification, disconnect an account, and review/cancel queued messages.
+3. **Sent Messages** — confirmed recipients awaiting reply, original sender, sent/follow-up status, IST timestamps, history and reviewed follow-ups.
+4. **Replies** — replied contacts are removed from Sent Messages and shown here for reviewed replies from the original Telegram account.
+5. **Settings** — add accounts (one initially, up to three), enter Telegram API credentials, phone/QR login, code recovery, two-step verification, disconnect an account, and review/cancel queued messages.
 
-The established WMM Telegram engine is included. It retains its authenticated API and supporting reply/follow-up workers; the separate frontend exposes only the three pages above. No old WMM account, database, Site identity, API secret, live lead, or Telegram session is included. The current WMM site is not modified by this package.
+The established WMM Telegram engine is included. It retains its authenticated API and supporting reply/follow-up workers; the separate frontend exposes the five pages above. No old WMM account, database, Site identity, API secret, live lead, or Telegram session is included. The current WMM site is not modified by this package.
 
 ## Run locally
 
@@ -72,7 +76,7 @@ The template library retains affirmative-reply and follow-up types for the inclu
 
 - `backend/app.py`: FastAPI service, Telegram accounts, persistence, quotas and workers.
 - `backend/contact_geo.py`, `backend/contact_import.py`: supporting engine modules.
-- `dist/index.html`: the three-page app and sign-in screen.
+- `dist/index.html`: the five-page app and sign-in screen.
 - `dist/standalone.js`: independent authentication, settings, templates and queue UI.
 - `dist/group-admins.js`, `dist/admin-batch.js`: collection and reviewed batch workflow.
 - `dist/workspace-polish.css`: the WMM design; `dist/standalone.css`: three-page layout adjustments.

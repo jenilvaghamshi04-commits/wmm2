@@ -8,10 +8,10 @@ class StandaloneTests(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory();self.env=patch.dict(os.environ,{'DATA_DIR':self.tmp.name,'DASHBOARD_KEY':'standalone-test-secret','DASHBOARD_USERNAME':'admin','DASHBOARD_PASSWORD':'standalone-test-secret','TELEGRAM_API_ID':'','TELEGRAM_API_HASH':''});self.env.start()
         spec=importlib.util.spec_from_file_location('standalone_test_app','backend/app.py');self.module=importlib.util.module_from_spec(spec);spec.loader.exec_module(self.module);self.client=TestClient(self.module.app)
     def tearDown(self):self.client.close();self.module.db.close();self.env.stop();self.tmp.cleanup()
-    def test_only_three_frontend_pages_and_same_origin_login(self):
+    def test_conversation_pages_and_same_origin_login(self):
         page=self.client.get('/');self.assertEqual(page.status_code,200)
         import re
-        self.assertEqual(re.findall(r'data-view="([^"]+)"',page.text),['groups','templates','connections'])
+        self.assertEqual(re.findall(r'data-view="([^"]+)"',page.text),['groups','sent','replies','templates','connections'])
         self.assertNotIn('id="loginGateway"',page.text);self.assertNotIn('qa-only',page.text);self.assertNotIn('id="saved"',page.text)
     def test_auth_templates_and_pacing_persist(self):
         self.assertEqual(self.client.get('/status').status_code,401)

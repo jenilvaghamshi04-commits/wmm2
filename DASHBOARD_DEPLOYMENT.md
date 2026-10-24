@@ -53,3 +53,14 @@ backend restarts or redeployments. This dashboard does not make its temporary
 storage durable. Back up and migrate the original backend to persistent storage
 before any future deployment that restarts it. Never merge this branch into the
 original backend's auto-deploy branch until that preservation step is complete.
+
+## Separate pages and reviewed scheduling
+
+- `/sent-messages` keeps recipients awaiting reply; `/replies` shows replied contacts.
+- Page links survive refresh, sign-in and browser Back/Forward.
+- The composer offers Queue now or Schedule for later, with explicit IST input.
+- Schedules are limited to the current workspace sign-in (up to 12 hours), and recheck replies before submitting to the original sending queue.
+- Schedules can be cancelled from Sent Messages. A reply cancels a pending scheduled follow-up.
+- The dashboard must remain running. A schedule missed by more than 15 minutes waits for review rather than sending unexpectedly late.
+- New schedule metadata uses temporary dashboard storage; free-host restarts or redeployments can clear it. No original backend records or Telegram sessions are moved.
+- Session tokens used for a reviewed schedule stay only in process memory, never in the schedule database. Authentication expiry/restarts require signing in again; no authentication lifetime is extended by the scheduler.

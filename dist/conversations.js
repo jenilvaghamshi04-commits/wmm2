@@ -20,7 +20,14 @@
     if(!text.trim())throw Error('Write a message before previewing.');
     return {request_id:requestId,action:mode,payload:{delivery_id:row.original.delivery_id,request_id:requestId,message:text.trim(),token_symbol:token,template_choices:choices}};
   }
-  root.WMMInboxModel={build,payload};
+  function schedule(plan,localTime,expiresAt,now=Date.now()){
+    if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(localTime||''))throw Error('Choose a scheduled date and time in IST.');
+    const due=Date.parse(localTime+':00+05:30'),expiry=Date.parse(expiresAt);
+    if(!Number.isFinite(due)||!Number.isFinite(expiry)||new Date(due+330*60000).toISOString().slice(0,16)!==localTime)throw Error('Choose a valid date and time in IST.');
+    if(due<=now+20000||due>=expiry-20000||due>now+12*3600000)throw Error('Schedule at least one minute ahead and before your current sign-in expires (up to 12 hours).');
+    return {...plan,scheduled_at:new Date(due).toISOString(),session_expires_at:expiresAt};
+  }
+  root.WMMInboxModel={build,payload,schedule};
 })(typeof window==='object'?window:globalThis);
 
 let conversationDraft=null,conversationRows=[];
@@ -35,7 +42,9 @@ function conversationCard(row){
   return `<article class="card conversation-card"><div class="conversation-card-top"><div><h2>${esc(row.name)}</h2><p>${esc(row.username?'@'+row.username.replace(/^@/,''):'User ID '+d.target)}</p></div><span class="conversation-badge ${row.replied?'has-reply':''}">${row.replied?'Replied':'Awaiting reply'}</span></div><div class="conversation-meta"><span>${esc(d.sender_label||'Account '+d.account_id)}</span><span>${esc(d.token_symbol?'$'+d.token_symbol:'No token saved')}</span><span>${esc(WMMMessageModel.exchanges[d.exchange]||d.exchange||'No exchange saved')}</span>${row.lead.group?`<span>${esc(row.lead.group)}</span>`:''}</div><div class="conversation-delivery"><span>Message: <b>${esc(states.message.label)}</b></span><span>Follow-up: <b>${esc(states.followup.label)}</b>${row.summary.followups?' · '+row.summary.followups:''}</span></div><p class="hint">First sent ${esc(conversationTime(d.at))} · Last sent ${esc(conversationTime(last.at))}</p><p class="conversation-last messagecopy">${esc(last.message||'Message text unavailable')}</p>${info}${row.pending.length?`<p class="conversation-warning">${esc(row.pending[0].status)} · ${esc(row.pending[0].error||'A message is already queued for this person.')}</p>`:''}${row.summary.pending?'<p class="conversation-warning">An earlier delivery needs review in Telegram before another send.</p>':''}<details><summary>Conversation history · ${row.summary.rows.length+(row.lead.replies||[]).length} messages</summary><div class="conversation-history">${conversationHistory(row)}</div></details><div class="conversation-actions"><button class="primary" data-conversation-open="${esc(row.key)}" ${!(row.replied?row.canReply:row.canFollowup)?'disabled':''}>${row.replied?'Reply':'Send follow-up'}</button><button data-conversation-check="${esc(row.key)}">Check replies</button>${row.replied&&row.lead.needs_attention?`<button data-conversation-read="${esc(row.key)}">Mark read</button>`:''}</div></article>`;
 }
 function renderConversations(){
-  conversationRows=WMMInboxModel.build(deliveries,leads,queuedSends,people);
+  const pendingSchedules=scheduledSends.filter(s=>['Scheduled','Waiting for sign-in','Sending','Needs attention'].includes(s.status)).map(s=>({...s,kind:'dm',status:s.status==='Needs attention'?'Needs attention':'Queued'}));
+  conversationRows=WMMInboxModel.build(deliveries,leads,[...queuedSends,...pendingSchedules],people);
+  renderScheduledConversations();
   for(const page of ['sent','replies']){
     const rows=conversationRows.filter(r=>r.replied===(page==='replies'));
     const search=$('#'+page+'ConversationSearch').value.trim().toLowerCase(),account=$('#'+page+'ConversationAccount').value;
@@ -50,6 +59,20 @@ function renderConversations(){
   $$('[data-conversation-check]').forEach(b=>b.onclick=()=>action(b,()=>checkConversationReplies(b.dataset.conversationCheck)));
   $$('[data-conversation-read]').forEach(b=>b.onclick=()=>action(b,async()=>{await rawApi('/leads/update',{key:b.dataset.conversationRead,acknowledge:true});await refresh(false)}));
   if(conversationDraft){const row=conversationRows.find(r=>r.key===conversationDraft.key);if(conversationDraft.mode==='follow-up'&&row?.replied){$('#conversationComposerStatus').textContent='A reply arrived. Follow-up stopped. Close this preview and open Replies.';$('#conversationQueueMessage').disabled=true}}
+}
+function renderScheduledConversations(){
+  $('#scheduledConversationRecords').innerHTML=scheduledSends.length?scheduledSends.map(s=>`<article class="queue-item"><b>${esc(s.name)}</b> · Account ${esc(s.account_id)} · ${esc(s.action==='reply'?'Reply':'Follow-up')}<p>${esc(conversationTime(s.scheduled_at))} · <b>${esc(s.status)}</b></p>${s.error?`<p class="hint">${esc(s.error)}</p>`:''}<details><summary>Reviewed message</summary><div class="messagecopy">${esc(s.message)}</div></details>${['Scheduled','Waiting for sign-in','Needs attention','Missed'].includes(s.status)?`<button data-cancel-schedule="${esc(s.schedule_id)}">Cancel schedule</button>`:''}</article>`).join(''):'<p class="hint">No scheduled messages. Open a conversation and choose “Schedule for later · IST”.</p>';
+  $$('[data-cancel-schedule]').forEach(b=>b.onclick=()=>action(b,async()=>{await rawApi('/scheduled-sends/cancel',{schedule_id:b.dataset.cancelSchedule});await refresh(false);toast('Scheduled message cancelled.')}));
+}
+const istDateInput=value=>new Date(value+330*60000).toISOString().slice(0,16);
+function renderConversationSchedule(){
+  const later=$('#conversationSendTiming').value==='later',expiry=workspaceSession.read()?.expiresAt;
+  $('#conversationScheduleFields').hidden=!later;
+  $('#conversationScheduledAt').min=istDateInput(Date.now()+60000);
+  if(expiry){$('#conversationScheduledAt').max=istDateInput(Date.parse(expiry)-60000);$('#conversationScheduleLimit').textContent='Schedule before '+conversationTime(expiry)+' (this sign-in expires then).'}
+  if(later&&!$('#conversationScheduledAt').value)$('#conversationScheduledAt').value=istDateInput(Date.now()+5*60000);
+  if(conversationDraft)$('#conversationQueueMessage').textContent=later?'Confirm schedule':'Queue '+(conversationDraft.mode==='reply'?'reply':'follow-up');
+  invalidateConversationPreview();
 }
 async function checkConversationReplies(key){
   const result=await rawApi('/replies/sync',key?{key}:{});await refresh(false);
@@ -85,20 +108,22 @@ async function openConversationComposer(key){
   $('#conversationComposerSender').textContent='Sending from '+(row.original.sender_label||'Account '+row.original.account_id)+' · '+(WMMMessageModel.exchanges[row.original.exchange]||row.original.exchange||'No exchange saved')+' · Original sender is locked';
   $('#conversationComposerHistory').innerHTML=conversationHistory(row);
   $('#conversationMessageToken').value=row.original.token_symbol||'';$('#conversationMessageText').value='';
+  $('#conversationSendTiming').value='now';$('#conversationScheduledAt').value='';renderConversationSchedule();
   $('#conversationMessageOption').innerHTML=conversationOptions(mode).map(o=>`<option value="${esc(o.value)}" ${o.disabled?'disabled':''}>${esc(o.label)}</option>`).join('');
   setConversationInputsDisabled(false);$('#conversationQueueMessage').textContent='Queue '+(mode==='reply'?'reply':'follow-up');
   try{selectConversationTemplate()}catch(error){$('#conversationMessageOption').value='custom';invalidateConversationPreview();toast(error.message)}
   $('#conversationComposer').showModal();
 }
-function setConversationInputsDisabled(disabled){for(const id of ['conversationMessageOption','conversationMessageToken','conversationMessageText','conversationPreviewMessage'])$('#'+id).disabled=disabled}
+function setConversationInputsDisabled(disabled){for(const id of ['conversationMessageOption','conversationMessageToken','conversationMessageText','conversationPreviewMessage','conversationSendTiming','conversationScheduledAt'])$('#'+id).disabled=disabled}
 function previewConversationMessage(){
   const d=conversationDraft,row=conversationRows.find(r=>r.key===d?.key);if(!d||d.uncertain)return;
   const text=$('#conversationMessageText').value.trim(),symbol=validateMessageToken(text,$('#conversationMessageToken').value);
   if(text.includes('{{exchange}}')&&!row.original.exchange)throw Error('This conversation has no saved exchange. Enter its exchange name directly in the message.');
   const choices=d.choice&&Object.values(d.choice)[0]===text?d.choice:{};
   d.plan=WMMInboxModel.payload(row,d.mode,text,symbol,d.requestId,choices);
+  if($('#conversationSendTiming').value==='later')d.plan=WMMInboxModel.schedule(d.plan,$('#conversationScheduledAt').value,workspaceSession.read()?.expiresAt);
   $('#conversationMessagePreview').textContent=WMMMessageModel.personalize(text,{...row.contact,name:row.name,username:row.username,group:row.contact.group||row.lead.group},symbol,row.original.exchange);$('#conversationMessagePreview').hidden=false;
-  $('#conversationQueueMessage').disabled=false;$('#conversationComposerStatus').textContent='Only this reviewed message will be queued, from the original Telegram account.';
+  $('#conversationQueueMessage').disabled=false;$('#conversationComposerStatus').textContent=d.plan.scheduled_at?'Schedule: '+conversationTime(d.plan.scheduled_at)+' · Original account locked. Reply checks run again before a follow-up is queued.':'Only this reviewed message will be queued, from the original Telegram account.';
 }
 async function queueConversationMessage(){
   const d=conversationDraft;if(!d?.plan)throw Error('Preview your message first.');
@@ -106,21 +131,22 @@ async function queueConversationMessage(){
   setConversationInputsDisabled(true);$('#conversationQueueMessage').disabled=true;
   let result;
   try{
-    result=await rawApi('/send-queue',d.plan);
-    if(!['Queued','Sending','Sent'].includes(result.status))throw Object.assign(Error('Queue status: '+result.status+'. Review Settings → Sending queue before another attempt.'),{status:409});
+    result=await rawApi(d.plan.scheduled_at?'/scheduled-sends':'/send-queue',d.plan);
+    if(!['Scheduled','Queued','Sending','Sent'].includes(result.status))throw Object.assign(Error('Queue status: '+result.status+'. Review scheduled messages and Settings → Sending queue before another attempt.'),{status:409});
   }catch(error){
     if(!error.status||error.status>=500){d.uncertain=true;$('#conversationComposerStatus').textContent='The queue response was interrupted. Retry this same request safely; do not create another message.';$('#conversationQueueMessage').textContent='Retry same queue request';$('#conversationQueueMessage').disabled=false}
     else{d.uncertain=false;setConversationInputsDisabled(false);invalidateConversationPreview();$('#conversationComposerStatus').textContent=error.message}
     throw error;
   }
-  if(d.plan.payload.template_choices)recordTemplateChoices(d.plan.payload.template_choices);
+  if(!d.plan.scheduled_at&&d.plan.payload.template_choices)recordTemplateChoices(d.plan.payload.template_choices);
   $('#conversationComposer').close();conversationDraft=null;
   try{await refresh(false)}catch{}
-  toast(result.status==='Sent'?'Message sent.':'Message queued from the original account. Follow its status in Sending queue.');
+  toast(result.status==='Scheduled'?'Message scheduled for '+conversationTime(result.scheduled_at)+'.':result.status==='Sent'?'Message sent.':'Message queued from the original account. Follow its status in Sending queue.');
 }
 document.addEventListener('DOMContentLoaded',()=>{
   for(const page of ['sent','replies']){for(const suffix of ['Search','Account'])$('#'+page+'Conversation'+suffix).addEventListener(suffix==='Search'?'input':'change',renderConversations);$('#'+page+'ConversationRefresh').onclick=e=>action(e.currentTarget,()=>checkConversationReplies())}
   $('#conversationMessageOption').onchange=()=>{try{selectConversationTemplate()}catch(error){toast(error.message)}};
+  $('#conversationSendTiming').onchange=renderConversationSchedule;$('#conversationScheduledAt').oninput=invalidateConversationPreview;
   for(const id of ['conversationMessageText','conversationMessageToken'])$('#'+id).oninput=invalidateConversationPreview;
   $('#conversationPreviewMessage').onclick=e=>action(e.currentTarget,previewConversationMessage);
   $('#conversationQueueMessage').onclick=async e=>{const button=e.currentTarget;await action(button,queueConversationMessage);const row=conversationRows.find(r=>r.key===conversationDraft?.key);button.disabled=!conversationDraft?.plan||(!conversationDraft.uncertain&&!(conversationDraft.mode==='reply'?row?.canReply:row?.canFollowup))};

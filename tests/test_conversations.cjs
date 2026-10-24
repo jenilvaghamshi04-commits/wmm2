@@ -39,3 +39,10 @@ const storage=new Map(),session=require('../dist/workspace-session.js').create({
 session.save({gateway:'https://dashboard.example',token:'issued-test-session',expiresAt:'2099-01-01T00:00:00Z',page:'replies'});
 assert.equal(session.read().page,'replies','Replies survives browser refresh');session.page('sent');assert.equal(session.read().page,'sent');
 console.log('Conversation partitioning, original-sender payloads, race guards, truthful status and session navigation passed.');
+const routes=require('../dist/page-routes.js');
+assert.equal(routes.resolve('/sent-messages'),'sent');assert.equal(routes.resolve('/replies/'),'replies');assert.equal(routes.resolve('/','sent'),'sent');assert.equal(routes.paths.replies,'/replies');
+const scheduled=model.schedule({request_id:'schedule-id',action:'follow-up',payload:{message:'Reviewed'}},'2026-10-24T14:00','2026-10-24T10:00:00Z',Date.parse('2026-10-24T08:00:00Z'));
+assert.equal(scheduled.scheduled_at,'2026-10-24T08:30:00.000Z','IST input is independent of browser timezone');
+assert.throws(()=>model.schedule({},'2026-10-24T14:00','2026-10-24T08:20:00Z',Date.parse('2026-10-24T08:00:00Z')),/sign-in expires/);
+assert.throws(()=>model.schedule({},'2026-02-31T14:00','2026-10-24T10:00:00Z',Date.parse('2026-10-24T08:00:00Z')),/valid date/);
+console.log('Separate page routes and IST scheduling boundaries passed.');

@@ -1,4 +1,6 @@
 import unittest
+import tempfile
+import os
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -8,6 +10,9 @@ from dashboard_proxy import app, BACKEND_ORIGIN
 
 class DashboardProxyTests(unittest.TestCase):
     def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.env_patch = patch.dict(os.environ, {'DASHBOARD_SCHEDULE_DIR': self.tmp.name})
+        self.env_patch.start()
         self.backend = AsyncMock()
         self.factory_patch = patch('dashboard_proxy.httpx.AsyncClient')
         self.factory_patch.start().return_value.__aenter__.return_value = self.backend
@@ -17,6 +22,15 @@ class DashboardProxyTests(unittest.TestCase):
     def tearDown(self):
         self.client.__exit__(None, None, None)
         self.factory_patch.stop()
+        self.env_patch.stop()
+        self.tmp.cleanup()
+
+    def test_separate_page_urls_serve_the_workspace_without_reading_backend(self):
+        for path in ['/sent-messages', '/replies', '/tg-groups', '/message-templates', '/settings']:
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 200)
+            self.assertIn('/page-routes.js', response.text)
+        self.backend.request.assert_not_awaited()
 
     def test_dashboard_health_and_assets_do_not_touch_existing_backend(self):
         self.assertEqual(self.client.get('/dashboard-health').json()['ok'], True)

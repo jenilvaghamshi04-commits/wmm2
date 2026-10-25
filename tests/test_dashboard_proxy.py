@@ -50,12 +50,11 @@ class DashboardProxyTests(unittest.TestCase):
         self.assertEqual(call.kwargs['headers']['authorization'], 'Bearer test-issued-token')
         self.assertEqual(result.headers['cache-control'], 'no-store')
 
-    def test_reviewed_send_is_forwarded_exactly_once_with_original_ids(self):
-        self.backend.request.return_value = httpx.Response(200, json={'status': 'Queued'})
-        payload = {'request_id': 'stable-request-id', 'action': 'reply', 'payload': {'delivery_id': 'original-delivery', 'request_id': 'stable-request-id', 'message': 'Reviewed answer'}}
-        self.assertEqual(self.client.post('/send-queue', json=payload).status_code, 200)
-        import json
-        self.assertEqual(json.loads(self.backend.request.call_args.kwargs['content']), payload)
+    def test_send_without_original_history_is_blocked_before_forwarding(self):
+        self.backend.request.return_value = httpx.Response(200, json={'settings':{'auto_yes_enabled':False,'auto_followup_enabled':False},'accounts':[]})
+        payload = {'request_id':'stable-request-id','action':'reply','payload':{'delivery_id':'missing','message':'Reviewed answer'}}
+        self.assertEqual(self.client.post('/send-queue', json=payload).status_code,409)
+        self.assertEqual(self.backend.request.call_args.args[0],'GET')
         self.backend.request.assert_awaited_once()
 
     def test_auth_failures_are_preserved_and_not_retried(self):
@@ -65,7 +64,7 @@ class DashboardProxyTests(unittest.TestCase):
 
     def test_timeouts_do_not_retry_writes_or_claim_success(self):
         self.backend.request.side_effect = httpx.ReadTimeout('timeout')
-        result = self.client.post('/send-queue', json={})
+        result = self.client.post('/send-queue', json={'request_id':'timeout-request','action':'send','payload':{}})
         self.assertEqual(result.status_code, 502)
         self.backend.request.assert_awaited_once()
 

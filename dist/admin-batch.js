@@ -47,7 +47,13 @@ function tgBatchReady(){
  const id=Number(document.getElementById('tgBulkSender').value),a=accounts.find(a=>a.id===id);
  if(!a?.authorized)throw Error('Connect the selected account first.');
  if(a.blocked_until&&new Date(a.blocked_until)>new Date())throw Error('This account is paused until '+new Date(a.blocked_until).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',hour12:true,timeZoneName:'short'})+'.');
- const recipients=tgAdminRecipients();if(!recipients.length||recipients.length>15)throw Error('Select between 1 and 15 real admins.');return {id,recipients};
+ const safety=typeof outreachState==='object'&&outreachState?.outreach_safety;
+ if(!safety)throw Error('Refresh to load Outreach controls before sending.');
+ if(a.error)throw Error('Account restriction needs review in Outreach controls.');
+ const selected=tgAdminRecipients();
+ for(const person of selected){const p=safety.permissions.find(p=>p.target===String(person.user_id));if(!p||!['Agreed','Contacted us'].includes(p.status)||p.account_id!==id)throw Error('Record genuine permission and assign this account in Outreach controls for each selected person.');}
+ if((safety.account_reserved[String(id)]||0)+selected.length>10||safety.team_reserved+selected.length>30)throw Error('This selection exceeds the 10/account or 30/team daily cap.');
+ const recipients=tgAdminRecipients();if(!recipients.length||recipients.length>10)throw Error('Select between 1 and 10 people with recorded permission.');return {id,recipients};
 }
 function invalidateTgBatchPreview(){tgAdminBatchPlan=null;document.getElementById('tgBatchPreviews').hidden=true;document.getElementById('tgBatchConfirm').disabled=true;document.getElementById('tgBatchState').textContent='Review the messages before queueing.'}
 async function openTgAdminBatch(){

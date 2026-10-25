@@ -74,6 +74,8 @@ class DashboardScheduler:
         request = {'request_id': jid, 'action': action, 'payload': payload}
         fingerprint = hashlib.sha256(json.dumps([request, due.isoformat()], sort_keys=True).encode()).hexdigest()
         state = await self.status(authorization)
+        if hasattr(self, 'safety'):
+            self.safety.validate('/send-queue', request, state)
         async with self.lock:
             existing = self.db.execute('select fingerprint,status from jobs where id=?', (jid,)).fetchone()
             if existing:
@@ -156,8 +158,12 @@ class DashboardScheduler:
                 if not claim.rowcount:
                     continue
                 try:
-                    response = await self.client.request('POST', self.origin + '/send-queue', headers={'Authorization': authorization}, json=request)
-                    data = response.json()
+                    if hasattr(self, 'safety'):
+                        response = await self.safety.submit('/send-queue', request, authorization)
+                        data = json.loads(response.body)
+                    else:
+                        response = await self.client.request('POST', self.origin + '/send-queue', headers={'Authorization': authorization}, json=request)
+                        data = response.json()
                     if not isinstance(data, dict):
                         raise ValueError('Invalid queue response')
                     if response.status_code == 200 and data.get('status') in ('Queued','Sending','Sent'):
@@ -168,6 +174,8 @@ class DashboardScheduler:
                     else:
                         detail = data.get('detail', 'Review the original sending queue before trying again.')
                         self.finish(jid, 'Needs attention', detail if isinstance(detail, str) else 'Review the original sending queue before trying again.')
+                except HTTPException as exc:
+                    self.finish(jid, 'Needs attention', str(exc.detail))
                 except (httpx.HTTPError, ValueError):
                     self.finish(jid, 'Needs attention', 'Queue submission could not be confirmed. Check Settings → Sending queue before another attempt.')
 

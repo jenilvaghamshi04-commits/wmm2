@@ -15,6 +15,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from dashboard_scheduler import DashboardScheduler
+from dashboard_safety import OutreachSafety
+from fastapi import HTTPException
+import json
 
 BACKEND_ORIGIN = os.getenv('WMM_BACKEND_ORIGIN', 'https://wmm2.onrender.com').rstrip('/')
 origin = urlsplit(BACKEND_ORIGIN)
@@ -36,6 +39,8 @@ async def lifespan(app):
         app.state.backend_client = client
         scheduler = DashboardScheduler(os.getenv('DASHBOARD_SCHEDULE_DIR', '/tmp/wmm-dashboard-schedules'), BACKEND_ORIGIN, client)
         app.state.scheduler = scheduler
+        app.state.safety = OutreachSafety(scheduler)
+        scheduler.safety = app.state.safety
         task = asyncio.create_task(scheduler.loop())
         try:
             yield
@@ -64,6 +69,22 @@ async def forward_api(request: Request, call_next):
     body = await request.body()
     if len(body) > 256 * 1024:
         return JSONResponse({'detail': 'Request is too large'}, status_code=413)
+    if request.method == 'POST' and path in ('/send-queue', '/groups/admins/send-batch'):
+        try:
+            return await request.app.state.safety.submit(path, json.loads(body), request.headers.get('authorization', ''))
+        except (ValueError, TypeError):
+            return JSONResponse({'detail':'Invalid message request.'}, status_code=422)
+        except HTTPException as exc:
+            return JSONResponse({'detail':exc.detail}, status_code=exc.status_code, headers={'Cache-Control':'no-store'})
+        except httpx.HTTPError:
+            return JSONResponse({'detail':'The existing server is waking up or unavailable. No message submission was attempted.'}, status_code=502, headers={'Cache-Control':'no-store'})
+    if path == '/templates' and request.method == 'POST':
+        try:
+            values = json.loads(body)
+            values.update(auto_yes_enabled=False, auto_followup_enabled=False)
+            body = json.dumps(values).encode()
+        except (ValueError, TypeError, AttributeError):
+            return JSONResponse({'detail':'Invalid template settings.'}, status_code=422)
     headers = {name: request.headers[name] for name in ('authorization', 'content-type', 'accept') if name in request.headers}
     try:
         result = await request.app.state.backend_client.request(
@@ -82,12 +103,32 @@ async def forward_api(request: Request, call_next):
         data = result.json()
         scheduler = request.app.state.scheduler
         scheduler.remember(request.headers.get('authorization', ''), request.headers.get('x-workspace-expires-at'))
+        data['outreach_safety'] = request.app.state.safety.summary(data)
         data['scheduled_sends'] = scheduler.records(data.get('queued_sends', []), data.get('leads', []))
         return JSONResponse(data, headers={'Cache-Control': 'no-store'})
     return Response(result.content, status_code=result.status_code, headers={
         'Content-Type': result.headers.get('content-type', 'application/json'),
         'Cache-Control': 'no-store',
     })
+
+@app.post('/outreach-reviewed-mode')
+async def reviewed_mode(request: Request):
+    authorization = request.headers.get('authorization', '')
+    state = await request.app.state.scheduler.status(authorization)
+    cfg = state.get('settings', {})
+    if not cfg.get('template', '').strip():
+        raise HTTPException(409, 'Save your initial message template in Message templates first. Saving it also disables unattended promotional sequences.')
+    values = {k: cfg[k] for k in ('template', 'followup_template', 'yes_pitch_template', 'yes_demo_template', 'template_variants') if k in cfg}
+    values.update(auto_yes_enabled=False, auto_followup_enabled=False)
+    try:
+        result = await request.app.state.backend_client.request('POST', BACKEND_ORIGIN+'/templates', headers={'Authorization':authorization}, json=values)
+        return JSONResponse(result.json(), status_code=result.status_code)
+    except (httpx.HTTPError, ValueError):
+        raise HTTPException(503, 'Could not confirm reviewed mode. Refresh to check before trying again.')
+
+@app.post('/outreach-permissions')
+async def permission_update(request: Request, body: dict):
+    return await request.app.state.safety.update(body, request.headers.get('authorization', ''))
 
 @app.post('/scheduled-sends')
 async def schedule_message(request: Request, body: dict):
@@ -103,6 +144,7 @@ async def cancel_scheduled_message(request: Request, body: dict):
 @app.get('/replies')
 @app.get('/message-templates')
 @app.get('/settings')
+@app.get('/outreach-controls')
 async def dashboard_page():
     return FileResponse(Path(__file__).resolve().parent / 'dist' / 'index.html', headers={'Cache-Control': 'no-cache'})
 

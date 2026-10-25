@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 
 import httpx
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from dashboard_scheduler import DashboardScheduler
 from dashboard_safety import OutreachSafety
@@ -126,10 +126,6 @@ async def reviewed_mode(request: Request):
     except (httpx.HTTPError, ValueError):
         raise HTTPException(503, 'Could not confirm reviewed mode. Refresh to check before trying again.')
 
-@app.post('/outreach-permissions')
-async def permission_update(request: Request, body: dict):
-    return await request.app.state.safety.update(body, request.headers.get('authorization', ''))
-
 @app.post('/scheduled-sends')
 async def schedule_message(request: Request, body: dict):
     return await request.app.state.scheduler.create(body, request.headers.get('authorization', ''))
@@ -138,13 +134,16 @@ async def schedule_message(request: Request, body: dict):
 async def cancel_scheduled_message(request: Request, body: dict):
     return await request.app.state.scheduler.cancel(body.get('schedule_id', ''), request.headers.get('authorization', ''))
 
+@app.get('/outreach-controls')
+async def retired_outreach_page():
+    return RedirectResponse('/settings', status_code=307)
+
 @app.get('/tg-groups')
 @app.get('/pending-messages')
 @app.get('/sent-messages')
 @app.get('/replies')
 @app.get('/message-templates')
 @app.get('/settings')
-@app.get('/outreach-controls')
 async def dashboard_page():
     return FileResponse(Path(__file__).resolve().parent / 'dist' / 'index.html', headers={'Cache-Control': 'no-cache'})
 

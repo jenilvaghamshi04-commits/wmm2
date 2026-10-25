@@ -32,6 +32,14 @@ class DashboardProxyTests(unittest.TestCase):
             self.assertIn('/page-routes.js', response.text)
         self.backend.request.assert_not_awaited()
 
+    def test_retired_page_redirects_and_permission_form_endpoint_is_removed(self):
+        result=self.client.get('/outreach-controls',follow_redirects=False)
+        self.assertEqual(result.status_code,307)
+        self.assertEqual(result.headers['location'],'/settings')
+        self.assertEqual(self.client.post('/outreach-permissions',json={}).status_code,405)
+        self.assertEqual(self.client.get('/outreach-controls.js').status_code,404)
+        self.backend.request.assert_not_awaited()
+
     def test_dashboard_health_and_assets_do_not_touch_existing_backend(self):
         self.assertEqual(self.client.get('/dashboard-health').json()['ok'], True)
         page = self.client.get('/')

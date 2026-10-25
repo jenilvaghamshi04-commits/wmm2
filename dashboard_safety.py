@@ -15,12 +15,8 @@ class OutreachSafety:
         self.scheduler = scheduler
         self.db = scheduler.db
         self.lock = asyncio.Lock()
-        self.db.execute('create table if not exists outreach_permissions(target text primary key, account integer, status text, evidence text, updated text)')
         self.db.execute('create table if not exists outreach_requests(id text primary key, fingerprint text, day text, targets text, response text, code integer)')
         self.db.commit()
-
-    def permissions(self):
-        return {r[0]:dict(target=r[0], account_id=r[1], status=r[2], evidence=r[3], updated_at=r[4]) for r in self.db.execute('select * from outreach_permissions')}
 
     def day(self):
         return datetime.now(ZoneInfo('Asia/Kolkata')).date().isoformat()
@@ -42,41 +38,12 @@ class OutreachSafety:
 
     def summary(self, state):
         pairs = self.counts(state)
-        contacts = {}
-        for c in state.get('contacts', []):
-            if c.get('kind') != 'group' and not c.get('is_bot') and c.get('user_id') is not None:
-                t = str(c['user_id'])
-                contacts[t] = dict(target=t, name=c.get('name') or t, username=c.get('username', ''))
         return dict(day=self.day(), per_account_limit=10, team_limit=30, team_reserved=len(pairs),
-                    account_reserved={str(a['id']):sum(x==a['id'] for x,t in pairs) for a in state.get('accounts', [])},
-                    permissions=list(self.permissions().values()), contacts=list(contacts.values()))
-
-    async def update(self, body, authorization):
-        state = await self.scheduler.status(authorization)
-        target, status, evidence = str(body.get('target', '')), body.get('status'), str(body.get('evidence', '')).strip()
-        account = body.get('account_id')
-        if not any(str(c.get('user_id')) == target and c.get('kind') != 'group' and not c.get('is_bot') for c in state.get('contacts', [])):
-            raise HTTPException(404, 'Choose a saved person.')
-        if status not in ('Unknown', 'Agreed', 'Contacted us', 'Opted out') or account not in [a['id'] for a in state.get('accounts', [])]:
-            raise HTTPException(422, 'Choose a permission status and an existing account.')
-        if status in ('Agreed', 'Contacted us') and (body.get('confirmed') is not True or not 12 <= len(evidence) <= 1000):
-            raise HTTPException(422, 'Confirm genuine permission and record its source, date and agreed scope (12–1,000 characters).')
-        if len(evidence) > 1000:
-            raise HTTPException(422, 'Keep the evidence note under 1,000 characters.')
-        async with self.lock:
-            old = self.permissions().get(target)
-            if old and old['account_id'] != account and any(str(r.get('target')) == target for r in state.get('deliveries', []) + state.get('queued_sends', [])):
-                raise HTTPException(409, 'This person already has a sending account. Keep the original assignment.')
-            if any(str(r.get('target')) == target and r.get('status') in ('Queued', 'Sending') for r in state.get('queued_sends', [])):
-                raise HTTPException(409, 'Review/cancel pending sends before changing permission. Needs-attention rows must be resolved first.')
-            self.db.execute('insert or replace into outreach_permissions values(?,?,?,?,?)', (target, account, status, evidence, datetime.now(timezone.utc).isoformat()))
-            self.db.commit()
-        return {'ok':True}
+                    account_reserved={str(a['id']):sum(x==a['id'] for x,t in pairs) for a in state.get('accounts', [])})
 
     def validate(self, path, body, state):
         if state.get('settings', {}).get('auto_followup_enabled', True) or state.get('settings', {}).get('auto_yes_enabled', True):
-            raise HTTPException(409, 'Activate reviewed mode in Outreach controls first to disable unattended promotional sequences.')
-        permissions = self.permissions()
+            raise HTTPException(409, 'Apply reviewed sending in Settings first to disable unattended promotional sequences.')
         action = 'send' if path.endswith('send-batch') else body.get('action')
         payload = body if path.endswith('send-batch') else body.get('payload', {})
         if action not in ('send', 'follow-up', 'reply'):
@@ -90,7 +57,7 @@ class OutreachSafety:
             for cid in ids:
                 c = next((c for c in state.get('contacts', []) if c.get('id') == cid), None)
                 if not c or c.get('kind') == 'group' or c.get('is_bot') or c.get('user_id') is None:
-                    raise HTTPException(409, 'Only saved people with recorded permission can receive dashboard outreach.')
+                    raise HTTPException(409, 'Choose a real saved person for a direct message.')
                 pairs.append((account, str(c['user_id'])))
         else:
             original = next((d for d in state.get('deliveries', []) if d.get('delivery_id') == payload.get('delivery_id') and d.get('status') == 'Sent' and d.get('kind') == 'dm'), None)
@@ -112,16 +79,8 @@ class OutreachSafety:
                         raise HTTPException(409, 'Account paused until '+a['blocked_until']+'. This is not proof of spam clearance.')
                 except ValueError:
                     raise HTTPException(409, 'Account waiting period needs review.')
-            p = permissions.get(target, {})
-            if p.get('status') == 'Opted out':
-                raise HTTPException(409, 'This person opted out. Sending is blocked.')
             lead = next((l for l in state.get('leads', []) if l.get('key') == 'dm:'+target), {})
             incoming = bool(lead.get('latest_reply') or lead.get('replies'))
-            if action != 'reply' or not incoming:
-                if p.get('status') not in ('Agreed', 'Contacted us'):
-                    raise HTTPException(409, 'Record genuine permission in Outreach controls before sending. Public group membership is not permission.')
-            if p and p.get('account_id') != account:
-                raise HTTPException(409, 'Use the account assigned in Outreach controls.')
             for raw, receipt, code in self.db.execute('select targets,response,code from outreach_requests'):
                 if any(str(t) == target for a,t in json.loads(raw)):
                     unknown = 'Submission is unconfirmed' in json.loads(receipt).get('detail','')
